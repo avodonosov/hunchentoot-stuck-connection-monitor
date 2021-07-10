@@ -431,6 +431,32 @@ This is supposed to force a check of ACCEPTOR-SHUTDOWN-P."
   (setf *finish-processing-socket* t
         *close-hunchentoot-stream* nil))
 
+(defgeneric auto-close-socket-after (taskmastter socket timeout-seconds))
+
+(defmethod auto-close-socket-after ((taskmastter t) (socket t) timeout-seconds)
+  (declare (ignore timeout-seconds))
+  ;; NoOP in the default implementation
+  )
+
+(defmethod auto-close-socket-after ((taskmaster multi-threaded-taskmaster)
+                                    (soocket t)
+                                    timeout-seconds)
+  ;; TODO:
+  ;; - Remember the socket and the computed deadline = now + timeout-seconds.
+  ;;   Overwrites previously added entry(-ies) for that socket.
+  ;;   If the timeout-seconds is NIL - remove the prevously added entry(-ies), if any.
+  ;; - If the thread is not started yet,
+  ;;   use (start-thread taskmaster). The thread body
+  ;;   will close the socket after the deadaline.
+  ;;   - The simplest implementation is for the thread
+  ;;     to wake up every second and loop over the full
+  ;;     collection of the mappings.
+  ;;   - Or, if the collection is a heap sorted by the deadline
+  ;;     (the soonest deadline on top), on every wake-up the thread
+  ;;     removes the top elements while the top element is expired,
+  ;;     and closes the sockets of the removed elements.
+  )
+
 (defmethod process-connection ((*acceptor* acceptor) (socket t))
   (let* ((socket-stream (make-socket-stream socket *acceptor*))
          (*hunchentoot-stream*)
@@ -442,11 +468,18 @@ This is supposed to force a check of ACCEPTOR-SHUTDOWN-P."
          ;; *CLOSE-HUNCHENTOOT-STREAM* has been set to T by the
          ;; handler, or the peer fails to send a request
          (progn
+           (auto-close-after (acceptor-taskmaster *acceptor*)
+                             socket
+                             (max (acceptor-read-timeout *acceptor*)
+                                  (acceptor-write-timeout *acceptor*)))
            (setq *hunchentoot-stream* (initialize-connection-stream *acceptor* socket-stream))
            (loop
               (let ((*finish-processing-socket* t))
                 (when (acceptor-shutdown-p *acceptor*)
                   (return))
+                (auto-close-after (acceptor-taskmaster *acceptor*)
+                                  socket
+                                  (acceptor-read-timeout *acceptor*))
                 (multiple-value-bind (headers-in method url-string protocol)
                     (get-request-data *hunchentoot-stream*)
                   ;; check if there was a request at all
@@ -468,6 +501,9 @@ This is supposed to force a check of ACCEPTOR-SHUTDOWN-P."
                               (t (hunchentoot-error "Client tried to use ~
 chunked encoding, but acceptor is configured to not use it.")))))
                     (with-acceptor-request-count-incremented (*acceptor*)
+                      (auto-close-after (acceptor-taskmaster *acceptor*)
+                                        socket
+                                        (acceptor-write-timeout *acceptor*))
                       (process-request (acceptor-make-request *acceptor* socket
                                                               :headers-in headers-in
                                                               :content-stream *hunchentoot-stream*
@@ -480,6 +516,9 @@ chunked encoding, but acceptor is configured to not use it.")))))
                   (setq *hunchentoot-stream* (reset-connection-stream *acceptor* *hunchentoot-stream*))
                   (when *finish-processing-socket*
                     (return))))))
+      (auto-close-after (acceptor-taskmaster *acceptor*)
+                        socket
+                        nil)
       (when *close-hunchentoot-stream*
         (flet ((close-stream (stream)
                  ;; as we are at the end of the request here, we ignore all
