@@ -431,31 +431,68 @@ This is supposed to force a check of ACCEPTOR-SHUTDOWN-P."
   (setf *finish-processing-socket* t
         *close-hunchentoot-stream* nil))
 
-(defgeneric auto-close-socket-after (taskmastter socket timeout-seconds))
 
-(defmethod auto-close-socket-after ((taskmastter t) (socket t) timeout-seconds)
-  (declare (ignore timeout-seconds))
-  ;; NoOP in the default implementation
-  )
+(deftype progress-state ()
+  `(member :initializing-stream
+           :reading-request
+           :processing-request
+           :connection-done))
 
-(defmethod auto-close-socket-after ((taskmaster multi-threaded-taskmaster)
-                                    (soocket t)
-                                    timeout-seconds)
-  ;; TODO:
-  ;; - Remember the socket and the computed deadline = now + timeout-seconds.
-  ;;   Overwrites previously added entry(-ies) for that socket.
-  ;;   If the timeout-seconds is NIL - remove the prevously added entry(-ies), if any.
-  ;; - If the thread is not started yet,
-  ;;   use (start-thread taskmaster). The thread body
-  ;;   will close the socket after the deadaline.
-  ;;   - The simplest implementation is for the thread
-  ;;     to wake up every second and loop over the full
-  ;;     collection of the mappings.
-  ;;   - Or, if the collection is a heap sorted by the deadline
-  ;;     (the soonest deadline on top), on every wake-up the thread
-  ;;     removes the top elements while the top element is expired,
-  ;;     and closes the sockets of the removed elements.
-  )
+(defgeneric track-progress (socket new-state-name acceptor)
+  (:documentation "Experimental.
+
+A hook that can be used by acceptors to verify that
+connection handling threads are not stuck forever
+waiting for data on inactive connections.
+
+This method is called multiple times for every connection,
+with NEW-STATE-NAME parameter taking one of the PROGRESS-STATE
+values. The possible state transitions:
+
+                          <-----------------------------------------<-
+                         |                                            |
+    :initializing-stream -> :reading-request -> :processing-request -> :connection-done
+
+
+The implementation of this method can remember the time of the
+last state change for every socket, and if it stays unchanged
+for too long, take some measures (logging, socket shutdown, ...).
+
+Background.
+
+Hunchentoot relies on socket timeouts to make sure
+worker threads are not stuck forever on inactive connections -
+see SET-TIMEOUTS. Hunchentoot expects an error signalled
+when IO hasn't happened for the timeout duration.
+
+However, this approach assumes socket timeouts work well in all Lisp
+implementations and that all possible socket stream wrapper layers -
+lexi-streams, chunga, cl+ssl - keep the timeouts working.
+
+But currently, streams created by cl+ssl in the `:unwrap-stream-p nil`
+mode, which is the default and means \"pass OpenSSl the file descriptor
+of the Lisp socket stream\", do not signal the timeout errors,
+at least on several important Lisp implementations (it seems
+those implementations handle the timeout on Lisp side,
+and not as socket file descriptor options).
+
+See https://github.com/cl-plus-ssl/cl-plus-ssl/pull/69,
+https://github.com/edicl/hunchentoot/issues/189.")
+  (:method :around (socket new-state-name acceptor)
+           (assert (typep new-state-name 'progress-state))
+           ;; catch and log any errors signalled by
+           ;; implementations.
+           (handler-bind
+               ((serious-condition
+                 (lambda (c)
+                   (acceptor-log-message acceptor
+                                         :error
+                                         "Error in (track-progress ~S ~S ~S) : ~A. ~A "
+                                         socket new-state-name acceptor c (get-backtrace)))))
+             (call-next-method)))
+  ;; the default method does nothing
+  (:method (socket new-state-name acceptor)
+    (declare (ignore socket new-state-name acceptor))))
 
 (defmethod process-connection ((*acceptor* acceptor) (socket t))
   (let* ((socket-stream (make-socket-stream socket *acceptor*))
@@ -468,18 +505,13 @@ This is supposed to force a check of ACCEPTOR-SHUTDOWN-P."
          ;; *CLOSE-HUNCHENTOOT-STREAM* has been set to T by the
          ;; handler, or the peer fails to send a request
          (progn
-           (auto-close-after (acceptor-taskmaster *acceptor*)
-                             socket
-                             (max (acceptor-read-timeout *acceptor*)
-                                  (acceptor-write-timeout *acceptor*)))
+           (track-progress socket :initializing-stream *acceptor*)
            (setq *hunchentoot-stream* (initialize-connection-stream *acceptor* socket-stream))
            (loop
               (let ((*finish-processing-socket* t))
                 (when (acceptor-shutdown-p *acceptor*)
                   (return))
-                (auto-close-after (acceptor-taskmaster *acceptor*)
-                                  socket
-                                  (acceptor-read-timeout *acceptor*))
+                (track-progress socket :reading-request *acceptor*)
                 (multiple-value-bind (headers-in method url-string protocol)
                     (get-request-data *hunchentoot-stream*)
                   ;; check if there was a request at all
@@ -501,9 +533,7 @@ This is supposed to force a check of ACCEPTOR-SHUTDOWN-P."
                               (t (hunchentoot-error "Client tried to use ~
 chunked encoding, but acceptor is configured to not use it.")))))
                     (with-acceptor-request-count-incremented (*acceptor*)
-                      (auto-close-after (acceptor-taskmaster *acceptor*)
-                                        socket
-                                        (acceptor-write-timeout *acceptor*))
+                      (track-progress socket :processing-request *acceptor*)
                       (process-request (acceptor-make-request *acceptor* socket
                                                               :headers-in headers-in
                                                               :content-stream *hunchentoot-stream*
@@ -516,9 +546,7 @@ chunked encoding, but acceptor is configured to not use it.")))))
                   (setq *hunchentoot-stream* (reset-connection-stream *acceptor* *hunchentoot-stream*))
                   (when *finish-processing-socket*
                     (return))))))
-      (auto-close-after (acceptor-taskmaster *acceptor*)
-                        socket
-                        nil)
+      (track-progress socket :connection-done *acceptor*)
       (when *close-hunchentoot-stream*
         (flet ((close-stream (stream)
                  ;; as we are at the end of the request here, we ignore all
