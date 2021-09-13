@@ -45,7 +45,8 @@
 
 (defclass my-acceptor (hunchentoot:ssl-acceptor
                        hunchentoot-stuck-connection-monitor::stuck-connection-monitor
-                       ) ())
+                       )
+  ())
 
 ;; How to generate a private key and certificate:
 ;;
@@ -71,7 +72,7 @@
 
 ;;   Expected: the monitoring thread is not started -
 ;;   the "monitoring thread started" message is not logged
-;;;  and slime-listt-threads does not shot this thread.
+;;;  and slime-list-threads does not show this thread.
 
 ;; 1.2 Initialte several "stuck" connections. Shell commands:
 ;;
@@ -98,16 +99,19 @@
 ;;   Open the https://localhost:1443 in browser, accept security exception
 ;;   for the self-signed certificate.
 ;;   The default hunchentoot "URL Not Found" html page must be displayed.
-;; 1.7
+;; 1.7 Check that the monitoring thread repeats logging the stuck
+;;   connections every :monitoring-interval-seconds.
+;; 1.8
      (hunchentoot:stop *srv*)
-;; 1.8 Check that the monitoring thread remains running, as well
+;; 1.9 Check that the monitoring thread remains running, as well
 ;;   as the worker threads of the 3 stuck connections
 ;;   (use slime-list-threads, for example).
-;; 1.9 Terminate the connections. Variations for the test case:
+;;   Also it must continue logging the remaining stuck connections.
+;; 1.10 Terminate the connections. Variations for the test case:
 ;;   - stop by Ctrl-C on client side,
-;;   - terminate by the
+;;   - terminate by the function call recommended in the log - it must be
        (hunchentoot-stuck-connection-monitor::shutdown-stuck-connections *srv*)
-;; 1.10 Check that the worker threads are freed and the monitoring thread
+;; 1.11 Check that the worker threads are freed and the monitoring thread
 ;;   is terminated after all the workers are completed.
 
 

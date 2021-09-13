@@ -447,12 +447,17 @@ waiting for data on inactive connections.
 
 This method is called multiple times for every connection,
 with NEW-STATE-NAME parameter taking one of the PROGRESS-STATE
-values. The possible state transitions:
+values. The normal state transitions:
 
-                          <-----------------------------------------<-
-                         |                                            |
+                          <---------------------------------------<-
+                         |                                          |
     :initializing-stream -> :reading-request -> :processing-request -> :connection-done
 
+The :CONNECTION-DONE state is activated from UNWIND-PROTECT,
+therefore in case of SERIOS-CONDITION or other non-local control
+transer, this state can also be transitioned to \"exceptionally\",
+from any state, in addition to the normal transitions illustrated
+above.
 
 The implementation of this method can remember the time of the
 last state change for every socket, and if it stays unchanged
