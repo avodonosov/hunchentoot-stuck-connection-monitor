@@ -472,14 +472,14 @@ when IO hasn't happened for the timeout duration.
 
 However, this approach assumes socket timeouts work well in all Lisp
 implementations and that all possible socket stream wrapper layers -
-lexi-streams, chunga, cl+ssl - keep the timeouts working.
+flexi-streams, chunga, cl+ssl - keep the timeouts working.
 
 But currently, streams created by cl+ssl in the `:unwrap-stream-p nil`
-mode, which is the default and means \"pass OpenSSl the file descriptor
+mode, which is the default and means \"pass to OpenSSL the file descriptor
 of the Lisp socket stream\", do not signal the timeout errors,
 at least on several important Lisp implementations (it seems
 those implementations handle the timeout on Lisp side,
-and not as socket file descriptor options).
+and not as the socket file descriptor options).
 
 See https://github.com/cl-plus-ssl/cl-plus-ssl/pull/69,
 https://github.com/edicl/hunchentoot/issues/189.")

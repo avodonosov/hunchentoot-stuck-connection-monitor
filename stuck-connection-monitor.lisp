@@ -38,7 +38,7 @@
    ;; A string in the form local-port:remote-host:remote-port
    (description :initarg :description :type string)
 
-   ;; The state specified by the last `(hunchentoot::record-progress ...)`
+   ;; The state specified by the last `(hunchentoot::track-progress ...)`
    ;; for this socket.
    (state :initarg :state :type keyword)
 
@@ -138,7 +138,12 @@
   (bt:with-lock-held ((lock monitor))
     (setf (stop-requested-p monitor) t)
     (bt:condition-notify (stop-cond-var monitor)))
-  (call-next-method))
+  (call-next-method)
+
+  ;; TODO: how to handle the redundant monitoring thread start / stop
+  ;; when acceptor is stopped, that happens because hunchentoot:stop unblocks
+  ;; the acceptor by making a special connection to it?
+  )
 
 (defun hunch-log (acceptor level format-str &rest format-args)
   (apply #'hunchentoot:acceptor-log-message
@@ -150,7 +155,7 @@
 (defun log-info (acceptor format-str &rest format-args)
   (apply #'hunch-log acceptor :info format-str format-args))
 
-(defparameter debug-enabled nil)
+(defparameter *debug-enabled* nil)
 
 (defun log-debug (acceptor format-str &rest args)
   ;; Don't reimplement this as a macro that generates
@@ -158,7 +163,7 @@
   ;; will skip evaluation of the expressions whose
   ;; results we log through this method, and we rely
   ;; on side-effects of some of them, like REMHASH.
-  (when debug-enabled
+  (when *debug-enabled*
     (apply #'hunch-log acceptor :info
            (concatenate 'string "DBG: " format-str)
            args)))

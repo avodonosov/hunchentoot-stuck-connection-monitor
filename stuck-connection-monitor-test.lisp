@@ -148,4 +148,84 @@
 ;;; Testcase 4: input or output timeout of acceptor is not set.
 ;;
 ;; - None of the connections is considered stuck - any
-;;   duration in a state is fine.
+;;   duration in a state is fine. (TODO: more detailed steps for testing)
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Testcase 5: slow request attack, for both HTTPS and plain HTTP.
+
+(defun slow-request-attack-body (binary-stream &key
+                                                 (sleep-seconds 10)
+                                                 (iterations 12))
+  "Makes pauses for SLEEP-SECONDS during HTTP request sending,
+and then sends one byte. Repeats ITERATIONS times.
+Thus prevents socket timeout on server, and keeps the server
+handler occupied."
+  (let ((s (flexi-streams:make-flexi-stream binary-stream
+                                            :external-format '(:utf-8
+                                                               :eol-style :crlf
+                                                               :little-endian nil))))
+    (format s "GET / HTTP/1.1~%")
+    (format s "User-Agent: ")
+    (finish-output s)
+    (dotimes (i iterations)
+      (format t "slow request iteration ~A~%" i)
+      (finish-output s)
+      (sleep sleep-seconds)
+      (write-char #\z s)
+      (finish-output s))))
+
+(defun slow-request-attack (host port &key (ssl-p nil)
+                                        (sleep-seconds 10)
+                                        (iterations 12))
+  (let ((sock (usocket:socket-connect host port :element-type '(unsigned-byte 8))))
+    (unwind-protect
+         (let ((sock-stream (usocket:socket-stream sock)))
+           (slow-request-attack-body (if ssl-p
+                                         (cl+ssl:make-ssl-client-stream sock-stream
+                                                                        :verify nil)
+                                         sock-stream)
+                                     :sleep-seconds sleep-seconds
+                                     :iterations iterations))
+      (usocket:socket-close sock))))
+
+(defun test-slow-request-attack (srv)
+  (let* ((sleep-seconds (1- (hunchentoot:acceptor-read-timeout srv)))
+         ;; make sure monitoring interval is reached during the attack, twice
+         (iterations (ceiling (* 2 (/ (hunchentoot-stuck-connection-monitor::monitoring-interval-seconds srv)
+                                      sleep-seconds)))))
+    (slow-request-attack "localhost"
+                         (hunchentoot:acceptor-port srv)
+                         :ssl-p (hunchentoot:ssl-p srv)
+                         :sleep-seconds sleep-seconds
+                         :iterations iterations)))
+;; 5.1 HTTPS
+(setf (hunchentoot-stuck-connection-monitor::shutdown-sockets-automatically *srv*)
+      nil)
+(hunchentoot:start *srv*)
+(test-slow-request-attack *srv*)
+;; Check the logs - the stuck connection should be logged (twice)
+(hunchentoot:stop *srv*)
+;; Veirfy the monitoring thread is stopped
+;;   (a message is logged, also slime-list-threads does not show it).
+
+;; 5.2 Plain HTTP
+
+(defclass my-plain-acceptor (hunchentoot:acceptor
+                             hunchentoot-stuck-connection-monitor::stuck-connection-monitor
+                             )
+  ())
+
+(defparameter *plain-srv*
+  (make-instance 'my-plain-acceptor
+                 :port 8088
+                 :read-timeout 3
+                 :write-timeout 3
+                 :monitoring-interval-seconds 30))
+
+(hunchentoot:start *plain-srv*)
+(test-slow-request-attack *plain-srv*)
+;; Check the logs - the stuck connection should be logged (twice)
+(hunchentoot:stop *plain-srv*)
+;; Veirfy the monitoring thread is stopped
+;;   (a message is logged, also slime-list-threads does not show it).
