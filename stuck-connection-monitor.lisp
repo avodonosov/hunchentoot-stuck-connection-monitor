@@ -376,8 +376,8 @@ NIL means no timeout.")
     (when (should-stop-p acceptor)
       (bt:condition-notify (stop-cond-var acceptor))))
 
-  (if (typep (hunchentoot::acceptor-taskmaster acceptor)
-             'hunchentoot:one-thread-per-connection-taskmaster)
-      (ensure-monitoring-thread-running acceptor)))
+  (when (typep (hunchentoot::acceptor-taskmaster acceptor)
+               'hunchentoot:one-thread-per-connection-taskmaster)
+    (ensure-monitoring-thread-running acceptor)))
 
 
