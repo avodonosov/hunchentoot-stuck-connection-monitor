@@ -182,6 +182,13 @@ and false on timeout. As usually, the TIMEOUT-SECONDS can be fractional."
                     (floor seconds-passed) (floor remaining-seconds))
          (when (<= remaining-seconds 0)
            (return-from wait-for-stop nil))
+         ;; Lock only around this code fragment and not around
+         ;; the whole LOOP because I don't want to call external
+         ;; functions (like the time related standard functions),
+         ;; from withing a lock, because the external functions can
+         ;; have other locks inside, which would create nested locks situation,
+         ;; and thus open a potential for deadlocks, should other code
+         ;; aquire the two locks in different order.
          (bt:with-lock-held ((lock monitor))
            (when (should-stop-p monitor)
              (return-from wait-for-stop t))
@@ -193,9 +200,7 @@ and false on timeout. As usually, the TIMEOUT-SECONDS can be fractional."
                                                     ;; small timeouts
                                                     1/1000))
              ;; A nil returned from bt:condition-wait means
-             ;; the temeout has expired and the lock is not held anymore.
-             ;; (Hopefully, the exit code of the bt:with-lock-held macro
-             ;; is prepared to the lock not being held).
+             ;; the temeout has expired.
              (return-from wait-for-stop nil)))))))
 
 (defgeneric stuck-timeout (acceptor)
