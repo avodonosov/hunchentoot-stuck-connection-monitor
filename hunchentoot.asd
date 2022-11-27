@@ -78,7 +78,6 @@
                (:file "taskmaster")
                (:file "acceptor")
                #-:hunchentoot-no-ssl (:file "ssl")
-               #-:lispworks (:file "stuck-connection-monitor")
                (:file "easy-handlers")))
 
 (defsystem :hunchentoot-test

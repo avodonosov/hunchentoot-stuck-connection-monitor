@@ -37,14 +37,15 @@
 ;(pushnew "~/prj/cl+ssl/cl-plus-ssl/" asdf:*central-registry* :test 'equal)
 
 (ql:quickload :hunchentoot :verbose t)
+(ql:quickload :hunchentoot-stuck-connection-monitor :verbose t)
 
 (setq hunchentoot:*log-lisp-errors-p* t
       hunchentoot:*log-lisp-backtraces-p* t
       ;cl+ssl::*default-unwrap-stream-p* nil
       )
 
-(defclass my-acceptor (hunchentoot:ssl-acceptor
-                       hunchentoot-stuck-connection-monitor::stuck-connection-monitor
+(defclass my-acceptor (hunchentoot-stuck-connection-monitor::stuck-connection-monitor
+                       hunchentoot:ssl-acceptor
                        )
   ())
 
@@ -211,8 +212,8 @@ handler occupied."
 
 ;; 5.2 Plain HTTP
 
-(defclass my-plain-acceptor (hunchentoot:acceptor
-                             hunchentoot-stuck-connection-monitor::stuck-connection-monitor
+(defclass my-plain-acceptor (hunchentoot-stuck-connection-monitor::stuck-connection-monitor
+                             hunchentoot:acceptor
                              )
   ())
 

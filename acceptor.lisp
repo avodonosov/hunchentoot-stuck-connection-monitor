@@ -431,74 +431,6 @@ This is supposed to force a check of ACCEPTOR-SHUTDOWN-P."
   (setf *finish-processing-socket* t
         *close-hunchentoot-stream* nil))
 
-
-(deftype progress-state ()
-  `(member :initializing-stream
-           :reading-request
-           :processing-request
-           :connection-done))
-
-(defgeneric track-progress (socket new-state-name acceptor)
-  (:documentation "Experimental.
-
-A hook that can be used by acceptors to verify that
-connection handling threads are not stuck forever
-waiting for data on inactive connections.
-
-This method is called multiple times for every connection,
-with NEW-STATE-NAME parameter taking one of the PROGRESS-STATE
-values. The normal state transitions:
-
-                          <---------------------------------------<-
-                         |                                          |
-    :initializing-stream -> :reading-request -> :processing-request -> :connection-done
-
-The :CONNECTION-DONE state is activated from UNWIND-PROTECT,
-therefore in case of SERIOS-CONDITION or other non-local control
-transer, this state can also be transitioned to \"exceptionally\",
-from any state, in addition to the normal transitions illustrated
-above.
-
-The implementation of this method can remember the time of the
-last state change for every socket, and if it stays unchanged
-for too long, take some measures (logging, socket shutdown, ...).
-
-Background.
-
-Hunchentoot relies on socket timeouts to make sure
-worker threads are not stuck forever on inactive connections -
-see SET-TIMEOUTS. Hunchentoot expects an error signalled
-when IO hasn't happened for the timeout duration.
-
-However, this approach assumes socket timeouts work well in all Lisp
-implementations and that all possible socket stream wrapper layers -
-flexi-streams, chunga, cl+ssl - keep the timeouts working.
-
-But currently, streams created by cl+ssl in the `:unwrap-stream-p nil`
-mode, which is the default and means \"pass to OpenSSL the file descriptor
-of the Lisp socket stream\", do not signal the timeout errors,
-at least on several important Lisp implementations (it seems
-those implementations handle the timeout on Lisp side,
-and not as the socket file descriptor options).
-
-See https://github.com/cl-plus-ssl/cl-plus-ssl/pull/69,
-https://github.com/edicl/hunchentoot/issues/189.")
-  (:method :around (socket new-state-name acceptor)
-           (assert (typep new-state-name 'progress-state))
-           ;; catch and log any errors signalled by
-           ;; implementations.
-           (handler-bind
-               ((serious-condition
-                 (lambda (c)
-                   (acceptor-log-message acceptor
-                                         :error
-                                         "Error in (track-progress ~S ~S ~S) : ~A. ~A "
-                                         socket new-state-name acceptor c (get-backtrace)))))
-             (call-next-method)))
-  ;; the default method does nothing
-  (:method (socket new-state-name acceptor)
-    (declare (ignore socket new-state-name acceptor))))
-
 (defmethod process-connection ((*acceptor* acceptor) (socket t))
   (let* ((socket-stream (make-socket-stream socket *acceptor*))
          (*hunchentoot-stream*)
@@ -510,13 +442,11 @@ https://github.com/edicl/hunchentoot/issues/189.")
          ;; *CLOSE-HUNCHENTOOT-STREAM* has been set to T by the
          ;; handler, or the peer fails to send a request
          (progn
-           (track-progress socket :initializing-stream *acceptor*)
            (setq *hunchentoot-stream* (initialize-connection-stream *acceptor* socket-stream))
            (loop
               (let ((*finish-processing-socket* t))
                 (when (acceptor-shutdown-p *acceptor*)
                   (return))
-                (track-progress socket :reading-request *acceptor*)
                 (multiple-value-bind (headers-in method url-string protocol)
                     (get-request-data *hunchentoot-stream*)
                   ;; check if there was a request at all
@@ -538,7 +468,6 @@ https://github.com/edicl/hunchentoot/issues/189.")
                               (t (hunchentoot-error "Client tried to use ~
 chunked encoding, but acceptor is configured to not use it.")))))
                     (with-acceptor-request-count-incremented (*acceptor*)
-                      (track-progress socket :processing-request *acceptor*)
                       (process-request (acceptor-make-request *acceptor* socket
                                                               :headers-in headers-in
                                                               :content-stream *hunchentoot-stream*
@@ -551,7 +480,6 @@ chunked encoding, but acceptor is configured to not use it.")))))
                   (setq *hunchentoot-stream* (reset-connection-stream *acceptor* *hunchentoot-stream*))
                   (when *finish-processing-socket*
                     (return))))))
-      (track-progress socket :connection-done *acceptor*)
       (when *close-hunchentoot-stream*
         (flet ((close-stream (stream)
                  ;; as we are at the end of the request here, we ignore all
