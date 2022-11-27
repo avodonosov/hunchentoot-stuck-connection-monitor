@@ -149,7 +149,25 @@
 ;;; Testcase 4: input or output timeout of acceptor is not set.
 ;;
 ;; - None of the connections is considered stuck - any
-;;   duration in a state is fine. (TODO: more detailed steps for testing)
+;;   duration in a state is fine.
+
+;; 4.1
+;;
+     (defparameter *timeout-backup*
+       (slot-value *srv* 'hunchentoot::read-timeout))
+     (setf (slot-value *srv* 'hunchentoot::read-timeout) nil)
+     (hunchentoot:start *srv*)
+;; 4.2 Create stuck connections as in the Testcase 1.
+;;     Wait for more than monitoring-interval - verify they
+;;     are not logged.
+;; 4..3
+     (hunchentoot:stop *srv*)
+;;   Verify the monitoring thread remains running
+;; 4..4
+;;   Terminate the connections by Ctrl-C in console
+;;   Verify the monitoring thread stops at this point (logs the message)
+;; 4..5
+    (setf (slot-value *srv* 'hunchentoot::read-timeout) *timeout-backup*)
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -195,7 +213,7 @@ handler occupied."
          ;; make sure monitoring interval is reached during the attack, twice
          (iterations (ceiling (* 2 (/ (hunchentoot-stuck-connection-monitor::monitoring-interval-seconds srv)
                                       sleep-seconds)))))
-    (slow-request-attack "localhost"
+    (slow-request-attack #(127 0 0 1)
                          (hunchentoot:acceptor-port srv)
                          :ssl-p (hunchentoot:ssl-p srv)
                          :sleep-seconds sleep-seconds
