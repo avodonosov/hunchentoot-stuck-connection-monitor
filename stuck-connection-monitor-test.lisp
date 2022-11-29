@@ -32,9 +32,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Setup
 
-(pushnew "~/prj/hunchentoot/" asdf:*central-registry* :test 'equal)
-;(pushnew "~/prj/usocket/" asdf:*central-registry* :test 'equal)
-;(pushnew "~/prj/cl+ssl/cl-plus-ssl/" asdf:*central-registry* :test 'equal)
+(pushnew "~/prj/hunchentoot-stuck-connection-monitor/"
+         asdf:*central-registry*
+         :test 'equal)
 
 (ql:quickload :hunchentoot :verbose t)
 (ql:quickload :hunchentoot-stuck-connection-monitor :verbose t)
@@ -44,7 +44,7 @@
       ;cl+ssl::*default-unwrap-stream-p* nil
       )
 
-(defclass my-acceptor (hunchentoot-stuck-connection-monitor::stuck-connection-monitor
+(defclass my-acceptor (hunch-conn-mon:stuck-connection-monitor
                        hunchentoot:ssl-acceptor
                        )
   ())
@@ -111,7 +111,7 @@
 ;; 1.10 Terminate the connections. Variations for the test case:
 ;;   - stop by Ctrl-C on client side,
 ;;   - terminate by the function call recommended in the log - it must be
-       (hunchentoot-stuck-connection-monitor::shutdown-stuck-connections *srv*)
+       (hunch-conn-mon:shutdown-stuck-connections *srv*)
 ;; 1.11 Check that the worker threads are freed and the monitoring thread
 ;;   is terminated after all the workers are completed.
 
@@ -119,7 +119,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Testcase 2: shutdown-sockets-automatically
 ;; 2.1
-     (setf (hunchentoot-stuck-connection-monitor::shutdown-sockets-automatically *srv*)
+     (setf (hunch-conn-mon:shutdown-sockets-automatically *srv*)
            t)
      (hunchentoot:start *srv*)
 ;; 2.2 Create stuck connections as in the Testcase 1.
@@ -154,7 +154,7 @@
 ;; 4.1
 ;;
      (defparameter *timeout-backup*
-       (slot-value *srv* 'hunchentoot::read-timeout))
+       (hunchentoot:acceptor-read-timeout *srv*))
      (setf (slot-value *srv* 'hunchentoot::read-timeout) nil)
      (hunchentoot:start *srv*)
 ;; 4.2 Create stuck connections as in the Testcase 1.
@@ -168,7 +168,6 @@
 ;;   Verify the monitoring thread stops at this point (logs the message)
 ;; 4..5
     (setf (slot-value *srv* 'hunchentoot::read-timeout) *timeout-backup*)
-
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Testcase 5: slow request attack, for both HTTPS and plain HTTP.
@@ -211,7 +210,7 @@ handler occupied."
 (defun test-slow-request-attack (srv)
   (let* ((sleep-seconds (1- (hunchentoot:acceptor-read-timeout srv)))
          ;; make sure monitoring interval is reached during the attack, twice
-         (iterations (ceiling (* 2 (/ (hunchentoot-stuck-connection-monitor::monitoring-interval-seconds srv)
+         (iterations (ceiling (* 2 (/ (hunch-conn-mon:monitoring-interval-seconds srv)
                                       sleep-seconds)))))
     (slow-request-attack #(127 0 0 1)
                          (hunchentoot:acceptor-port srv)
@@ -219,7 +218,7 @@ handler occupied."
                          :sleep-seconds sleep-seconds
                          :iterations iterations)))
 ;; 5.1 HTTPS
-(setf (hunchentoot-stuck-connection-monitor::shutdown-sockets-automatically *srv*)
+(setf (hunch-conn-mon:shutdown-sockets-automatically *srv*)
       nil)
 (hunchentoot:start *srv*)
 (test-slow-request-attack *srv*)
@@ -230,7 +229,7 @@ handler occupied."
 
 ;; 5.2 Plain HTTP
 
-(defclass my-plain-acceptor (hunchentoot-stuck-connection-monitor::stuck-connection-monitor
+(defclass my-plain-acceptor (hunch-conn-mon:stuck-connection-monitor
                              hunchentoot:acceptor
                              )
   ())

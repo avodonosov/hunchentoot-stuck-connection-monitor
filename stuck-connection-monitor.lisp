@@ -27,6 +27,20 @@
 ;;; SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 (defpackage #:hunchentoot-stuck-connection-monitor
+  (:nicknames #:hunch-conn-mon)
+  (:export
+   ;; The mixin class
+   #:stuck-connection-monitor
+   ;; Accessors for its public properties
+   #:shutdown-sockets-automatically
+   #:monitoring-interval-seconds
+   ;; The generic function to overrride
+   ;; if different "stuck" timeout is needed
+   #:stuck-timeout
+   ;; The function to manually shutdown
+   ;; the stuck connection sockets
+   #:shutdown-stuck-connections
+   )
   (:use :cl))
 
 (in-package :hunchentoot-stuck-connection-monitor)
@@ -287,7 +301,7 @@ NIL means no timeout.")
                            :key (lambda (record)
                                   (slot-value record 'description))))
                (log-warn monitor
-                         "~A connection(s) seem stuck, thus leaking their threads.~:[ On Linux use `(hunchentoot-stuck-connection-monitor::shutdown-stuck-connections your-acceptor)` to termitate them manually or run with `:shutdown-sockets-automatically t`.~;~] The connections:"
+                         "~A connection(s) seem stuck, thus leaking their threads.~:[ On Linux use `(hunchentoot-stuck-connection-monitor:shutdown-stuck-connections your-acceptor)` to termitate them manually or run with `:shutdown-sockets-automatically t`.~;~] The connections:"
                          (length timed-out)
                          (shutdown-sockets-automatically monitor))
                (dolist (record timed-out)
