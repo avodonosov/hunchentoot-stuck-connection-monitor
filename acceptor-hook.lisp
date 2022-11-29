@@ -41,7 +41,7 @@
 ;; place our mixin class stuck-connection-monitor earlier
 ;; in the class precedence list of their acceptors
 ;; than hunchentoot:acceptor - the mixin will work
-;; even if it's olaced after.
+;; even if it's placed after.
 (defmethod process-connection ((*acceptor* hunchentoot-stuck-connection-monitor::stuck-connection-monitor)
                                (socket t))
   (let* ((socket-stream (make-socket-stream socket *acceptor*))
