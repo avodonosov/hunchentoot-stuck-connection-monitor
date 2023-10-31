@@ -247,3 +247,115 @@ handler occupied."
 (hunchentoot:stop *plain-srv*)
 ;; Veirfy the monitoring thread is stopped
 ;;   (a message is logged, also slime-list-threads does not show it).
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Testcase 6: write timeout does not work on SBCL (at least)
+
+;; 6.1 Create a request handler that responds with body
+;;     large enough to fill the socket buffers on
+;;     receiver and sender sides:
+
+(defmethod send-large-body ()
+  (setf (hunchentoot:content-type*) "text/html; charset=utf-8")
+  (let ((stream (hunchentoot:send-headers))
+        (byte-counter 0))
+    (dotimes (i 30000)
+      (let* ((bytes-sent-msg (format nil "~8d response bytes sent (~4dth iteration)." byte-counter i))
+             (response-fragment (format nil
+                                        "~A Hello, hello, hello, world! Hellooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo!~%"
+                                        bytes-sent-msg))
+             (response-fragment-bytes (flex:string-to-octets response-fragment
+                                                             :external-format :utf-8)))
+        (format t "~A~%" bytes-sent-msg)
+        (write-sequence response-fragment-bytes stream)
+        (incf byte-counter (length response-fragment-bytes))))))
+
+(defmethod hunchentoot:acceptor-dispatch-request ((acceptor my-plain-acceptor)
+                                                  request)
+  (if (string= "/large-body"
+               (hunchentoot:script-name request))
+      (send-large-body)
+      (call-next-method)))
+
+;; 6.2 Extend the read timeout to 10 sec so that
+;;   we have time to copy the request line
+;;   into telnet session below.
+(defparameter *timeout-backup*
+  (hunchentoot:acceptor-read-timeout *plain-srv*))
+
+(setf (slot-value *plain-srv* 'hunchentoot::read-timeout) 10
+      ;; for many lisps, write timeout should be equal to read timeout
+      (slot-value *plain-srv* 'hunchentoot::write-timeout) 10)
+
+;; 6.3
+(hunchentoot:start *plain-srv*)
+
+;; 6.4 Simulate a client that sends the request but does
+;;   not read the response. (Note, you need to hit <Return>
+;;   twice after the second line:
+;;
+#|
+
+ ```bash
+
+time telnet localhost 8088 | more ; stty echo
+GET /large-body HTTP/1.1
+
+
+# Be sure to enter the second line quickly,
+# before the server read timeout expires.
+# And hit <Return> twice after the second
+# line.
+#
+# The `stty echo` in the end is needed to restore
+# terminal echoing of input characters.
+# Without it, if the `telnet | more` pipeline
+# is interrupted with Ctrl-C, the terminal
+# echo remains disabled as it is done by the `more`.
+
+```
+
+|#
+
+;; 6.5
+;; In the terminal you will see the beginning
+;; of the response. As further printing is
+;; blocked by more, the response is not read,
+;; and the server thread is blocked in write
+;; operation.
+;;
+;; On SBCl the thread will remain waiting
+;; way after the write timeout.
+;; You will see the stuck-connection-monitor
+;; log messages in hunchentoot output.
+;;
+;; The TCP stack will be repeatedly trying
+;; to resent the packets for which the receiver
+;; (the `telnet | more` combo) does not send
+;; an acknowledgement. After a long delay the
+;; TCP stack will close the socket. Online
+;; articles sugggest on Linux it will take around
+;; 15 minutes. In my tests with SBCL 2.2.6
+;; and Linux 5.15.0-87-generic #97-Ubuntu SMP Mon Oct 2 21:09:21 UTC 2023 x86_64 x86_64 x86_64 GNU/Linux
+;; it took 20 minutes.
+;; Search for "TCP retransmission timeout" and
+;; RFC-6298 for more info.
+
+;; 6.6
+(hunchentoot:stop *plain-srv*)
+(setf (slot-value *plain-srv* 'hunchentoot::read-timeout) *timeout-backup*
+      (slot-value *plain-srv* 'hunchentoot::write-timeout) *timeout-backup*)
+
+;; 6.7
+(hunchentoot-stuck-connection-monitor:shutdown-stuck-connections *plain-srv*)
+
+;; 6.8
+;; Terminate the telnet in the terminal with Ctrl-C
+
+;; Note: why we use telnet to simulate a client
+;; that does not read the response, instead of a
+;; similar lisp function that would connect to the server,
+;; send request line and not read the response:
+;; it's because on CCL the sockets implementation
+;; automatically closes the client socket if it's
+;; receiver buffer is exhausted.
