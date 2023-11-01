@@ -34,7 +34,7 @@
 ;; The original process-connection code is from
 ;; git commit 2bda004ef763fd6c85d76ee0311f8f22ed3865b5
 ;; Date:   Mon Jun 21 15:52:15 2021 +0545
-;; It is probably makes sense to add the (track-progress ...)
+;; It probably makes sense to add the (track-progress ...)
 ;; calls to the oficial upstream hunchentoot:process-connection
 ;; method defined for hunchentoot:acceptor.
 ;; BTW, in this case the extension users won't need to
