@@ -63,18 +63,20 @@ in my testing that took 20 minutes).
 Therefore it's good to have a health check service
 for hucnhentoot, that detects stuck connections.
 
-The file [test-stuck-connection-monitor.lisp](test-stuck-connection-monitor.lisp)
-contains steps to reproduce various scenarios
-described above, and to see how
-hunchentoot-stuck-connection-monitor detects them.
-
 Of course, not all applications want to consider
 connections staying in the same state for a long time
 as a problem. For example, a server offering some
 long polling endpoint, or supporting very large file
 downloads, may consider such connections as fine.
 
-# Unblocking the threads
+# Reproducing
+
+The file [test-stuck-connection-monitor.lisp](test-stuck-connection-monitor.lisp)
+contains steps to reproduce various scenarios
+described above, and to see how
+hunchentoot-stuck-connection-monitor detects them.
+
+# Unblocking the Threads
 
 To unblock the connection threads we suggest
 to `shutdown` the connection socket.
