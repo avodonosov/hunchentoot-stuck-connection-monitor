@@ -155,7 +155,8 @@
 ;;
      (defparameter *timeout-backup*
        (hunchentoot:acceptor-read-timeout *srv*))
-     (setf (slot-value *srv* 'hunchentoot::read-timeout) nil)
+     (setf (slot-value *srv* 'hunchentoot::read-timeout) nil
+           (slot-value *srv* 'hunchentoot::write-timeout) nil)
      (hunchentoot:start *srv*)
 ;; 4.2 Create stuck connections as in the Testcase 1.
 ;;     Wait for more than monitoring-interval - verify they
@@ -167,7 +168,8 @@
 ;;   Terminate the connections by Ctrl-C in console
 ;;   Verify the monitoring thread stops at this point (logs the message)
 ;; 4..5
-    (setf (slot-value *srv* 'hunchentoot::read-timeout) *timeout-backup*)
+     (setf (slot-value *srv* 'hunchentoot::read-timeout) *timeout-backup*
+           (slot-value *srv* 'hunchentoot::write-timeout) *timeout-backup*)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Testcase 5: slow request attack, for both HTTPS and plain HTTP.
