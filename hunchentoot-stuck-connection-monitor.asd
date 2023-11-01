@@ -38,7 +38,8 @@
   the connection threads and preventing thread and socket leak.
 
   See https://github.com/edicl/hunchentoot/issues/189"
-  :license "BSD-2-Clause"
+  :license "BSD-2-Clause" ; the same as hunchentoot
+  :author "Anton Vodonosov <avodonosov@yandex.ru>"
   :depends-on (:hunchentoot
                :bordeaux-threads
                :usocket)
