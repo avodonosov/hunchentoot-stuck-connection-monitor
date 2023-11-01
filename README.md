@@ -9,10 +9,10 @@ the connection threads and preventing thread and socket leakage.
 Create your own acceptor subclass and put our mixin
 class in the class precedence list before hunchentoot:acceptor,
 like this:
-https://github.com/avodonosov/hunchentoot-stuck-connection-monitor/blob/main/test-stuck-connection-monitor.lisp#L47
+[test-stuck-connection-monitor.lisp#L47](test-stuck-connection-monitor.lisp#L47)
 
 The public API is in the defpackage form at the top of
-stuck-connection-monitor.lisp.
+[stuck-connection-monitor.lisp](stuck-connection-monitor.lisp).
 
 # Background
 
@@ -63,7 +63,7 @@ in my testing that took 20 minutes).
 Therefore it's good to have a health check service
 for hucnhentoot, that detects stuck connections.
 
-The file test-stuck-connection-monitor.lisp
+The file [test-stuck-connection-monitor.lisp](test-stuck-connection-monitor.lisp)
 contains steps to reproduce various scenarios
 described above, and to see how
 hunchentoot-stuck-connection-monitor detects them.
@@ -76,12 +76,12 @@ downloads, may consider such connections as fine.
 
 # Unblocking the threads
 
-To unblock the connection threads we can `shutdown`
-the connection socket.
+To unblock the connection threads we suggest
+to `shutdown` the connection socket.
 
 Strictly speaking, calling socket operations
 from a thread other than the connection thread that
-currently reads or writes from socket is not guaranteed
+currently reads or writes to socket is not guaranteed
 to work correctly, socket API is single threaded.
 
 But `shutdown` works fine on Linux and unblocks the connection
